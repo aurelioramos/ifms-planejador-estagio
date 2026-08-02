@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Planejamento do Estágio Supervisionado</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header class="app-header">
+        <div class="container">
+            <h1>Planejamento do Estágio Supervisionado</h1>
+            <p>Organize sua carga horária, dias de estágio e exporte para sua agenda digital</p>
+        </div>
+    </header>
+
+    <main class="container">
+        <!-- MENSAGENS DE VALIDAÇÃO E ALERTAS -->
+        <div id="alertBox" class="alert hidden" role="alert"></div>
+
+        <form id="planningForm" onsubmit="event.preventDefault();">
+            <!-- 1. CONFIGURAÇÃO DA CARGA HORÁRIA -->
+            <section class="card">
+                <h2>1. Carga Horária Obrigatória (Horas)</h2>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="obsHours">Observação</label>
+                        <input type="number" id="obsHours" value="50" min="0" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="partHours">Participação</label>
+                        <input type="number" id="partHours" value="35" min="0" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="regHours">Regência</label>
+                        <input type="number" id="regHours" value="15" min="0" required>
+                    </div>
+                    <div class="form-group highlight-box">
+                        <label>Carga Horária Total</label>
+                        <div class="total-display" id="totalRequiredHours">100h</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 2. PERÍODO DO ESTÁGIO -->
+            <section class="card">
+                <h2>2. Período do Estágio</h2>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="startDate">Data Inicial</label>
+                        <input type="date" id="startDate" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="endDate">Data Final</label>
+                        <input type="date" id="endDate" required>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 3. DISPONIBILIDADE SEMANAL -->
+            <section class="card">
+                <h2>3. Disponibilidade Semanal</h2>
+                <p class="subtitle">Selecione os dias, horas diárias (máx. 6h) e o horário inicial opcional.</p>
+                
+                <div class="table-responsive">
+                    <table class="availability-table">
+                        <thead>
+                            <tr>
+                                <th>Realizar</th>
+                                <th>Dia da Semana</th>
+                                <th>Carga Horária (h)</th>
+                                <th>Horário Inicial</th>
+                            </tr>
+                        </thead>
+                        <tbody id="availabilityBody">
+                            <!-- Preenchido via JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- 4. DATAS INDISPONÍVEIS / FERIADOS E RECESSOS -->
+            <section class="card">
+                <h2>4. Feriados e Recessos (Datas Indisponíveis)</h2>
+                <p class="subtitle">Informe uma data ou um período completo para suspender as atividades de estágio.</p>
+                <div class="blackout-inputs">
+                    <div class="form-group">
+                        <label for="blackoutStartDateInput">Data Inicial</label>
+                        <input type="date" id="blackoutStartDateInput">
+                    </div>
+                    <div class="form-group">
+                        <label for="blackoutEndDateInput">Data Final (opcional)</label>
+                        <input type="date" id="blackoutEndDateInput">
+                    </div>
+                    <div class="form-group flex-grow">
+                        <label for="blackoutDescInput">Descrição</label>
+                        <input type="text" id="blackoutDescInput" placeholder="Ex: Recesso Escolar">
+                    </div>
+                    <div class="form-group">
+                        <button type="button" class="btn btn-secondary" id="addBlackoutBtn">Adicionar Bloqueio</button>
+                    </div>
+                </div>
+                <ul id="blackoutList" class="blackout-list"></ul>
+            </section>
+
+            <!-- BOTOES DE AÇÃO -->
+            <div class="actions-bar">
+                <button type="button" class="btn btn-primary" id="generateScheduleBtn">Gerar Planejamento</button>
+                <button type="button" class="btn btn-outline" id="saveStateBtn">Salvar Dados</button>
+            </div>
+        </form>
+
+        <!-- PLANEJAMENTO - CRONOGRAMA / CALENDÁRIO -->
+        <section id="scheduleSection" class="card hidden">
+            <h2>Cronograma Detalhado</h2>            
+
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <span class="metric-title">Carga Obrigatória</span>
+                    <span class="metric-value" id="metricRequired">100h</span>
+                </div>
+                <div class="metric-card">
+                    <span class="metric-title">Carga Planejada</span>
+                    <span class="metric-value" id="metricPlanned">0h</span>
+                </div>
+                <div class="metric-card">
+                    <span class="metric-title">Horas Restantes</span>
+                    <span class="metric-value" id="metricRemaining">0h</span>
+                </div>
+                <div class="metric-card">
+                    <span class="metric-title">Dias de Estágio</span>
+                    <span class="metric-value" id="metricDaysCount">0</span>
+                </div>
+                <div class="metric-card">
+                    <span class="metric-title">Previsão de Conclusão</span>
+                    <span class="metric-value" id="metricCompletionDate">-</span>
+                </div>
+                <div class="metric-card">
+                    <span class="metric-title">Progresso</span>
+                    <span class="metric-value" id="metricPercent">0%</span>
+                </div>
+            </div>
+            
+            <!-- RESUMO DAS MODALIDADES (ATUAL VS ESPERADO) -->
+            <div class="modalities-summary-grid">
+                <div class="modality-card mod-obs">
+                    <span class="mod-title">Observação</span>
+                    <span class="mod-value"><strong id="currentObs">0h</strong> / <span id="targetObs">50h</span></span>
+                </div>
+                <div class="modality-card mod-part">
+                    <span class="mod-title">Participação</span>
+                    <span class="mod-value"><strong id="currentPart">0h</strong> / <span id="targetPart">35h</span></span>
+                </div>
+                <div class="modality-card mod-reg">
+                    <span class="mod-title">Regência</span>
+                    <span class="mod-value"><strong id="currentReg">0h</strong> / <span id="targetReg">15h</span></span>
+                </div>
+            </div>
+
+            <!-- CAMPOS PARA ADICIONAR NOVA ATIVIDADE MANUAL -->
+            <div class="manual-activity-box">
+                <h3>+ Adicionar Nova Atividade Manual</h3>
+                <div class="form-grid align-end">
+                    <div class="form-group">
+                        <label for="manualDate">Data</label>
+                        <input type="date" id="manualDate">
+                    </div>
+                    <div class="form-group">
+                        <label for="manualModality">Modalidade</label>
+                        <select id="manualModality">
+                            <option value="Observação">Observação</option>
+                            <option value="Participação">Participação</option>
+                            <option value="Regência">Regência</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="manualHours">Horas (máx. 6h)</label>
+                        <input type="number" id="manualHours" min="0.5" max="6" step="0.5" placeholder="Ex: 4">
+                    </div>
+                    <div class="form-group">
+                        <label for="manualTime">Horário Inicial</label>
+                        <input type="time" id="manualTime" value="08:00">
+                    </div>
+                    <div class="form-group">
+                        <button type="button" class="btn btn-secondary" id="btnAddManual">Inserir Atividade</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="statusBanner" class="status-banner"></div>
+
+            <div class="table-responsive">
+                <table class="schedule-table">
+                    <thead>
+                        <tr>
+                            <th>Data</th>
+                            <th>Dia</th>
+                            <th>Modalidade</th>
+                            <th>Horas</th>
+                            <th>Horário</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="scheduleBody">
+                        <!-- Preenchido via JS com agrupamento por data -->
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="export-bar">
+                <button type="button" class="btn btn-success" id="exportIcsBtn">Exportar Calendário (.ics)</button>
+            </div>
+            
+        </section>
+    </main>
+
+    <footer class="app-footer">
+        <p>Sistema de Planejamento do Estágio Supervisionado &copy; 2026</p>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>
