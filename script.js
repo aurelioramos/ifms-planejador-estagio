@@ -14,8 +14,8 @@ const WEEKDAYS = [
 ];
 
 let state = {
-    obsHours: 50,
-    partHours: 35,
+    obsHours: 35,
+    partHours: 45,
     regHours: 15,
     startDate: '',
     endDate: '',
@@ -699,8 +699,8 @@ function loadStateFromLocalStorage() {
     if (saved) {
         try {
             state = JSON.parse(saved);
-            document.getElementById('obsHours').value = state.obsHours || 50;
-            document.getElementById('partHours').value = state.partHours || 35;
+            document.getElementById('obsHours').value = state.obsHours || 35;
+            document.getElementById('partHours').value = state.partHours || 45;
             document.getElementById('regHours').value = state.regHours || 15;
             if (state.startDate) document.getElementById('startDate').value = state.startDate;
             if (state.endDate) document.getElementById('endDate').value = state.endDate;
