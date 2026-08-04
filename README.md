@@ -135,3 +135,19 @@ Disponibilizar uma ferramenta para que o estudante possa:
 ├── index.html     # Interface da aplicação e formulários
 ├── styles.css     # Estilização responsiva e temas de status
 └── script.js     # Lógica de validações, algoritmo de alocação e exportador .ics
+---
+
+## 11. Visualização e exportação da ficha em PDF
+
+A ficha de acompanhamento é montada a partir do HTML de `#ficha-conteudo` e exibida no navegador por meio do visualizador `#ficha-pdf-viewer`.
+
+Na geração do arquivo:
+
+- cada página é criada no formato A4;
+- o cabeçalho institucional e o título são repetidos em todas as páginas;
+- o `thead` da tabela de atividades é recriado em cada página;
+- as linhas não são divididas entre duas páginas;
+- as assinaturas são mantidas na última página;
+- o botão **Exportar Ficha para PDF** atualiza a visualização e baixa o arquivo `.pdf`.
+
+A biblioteca `html2pdf.bundle.min.js` permanece local no projeto, portanto a exportação não depende de serviços externos.
