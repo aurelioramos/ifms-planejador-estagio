@@ -550,7 +550,7 @@ th {
 .ficha-assinaturas {
     display: flex;
     justify-content: space-between;
-    gap: 10mm;
+    gap: 5mm;
     margin-top: 18mm;
     text-align: center;
 }
