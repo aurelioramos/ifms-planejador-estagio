@@ -57,7 +57,7 @@ function renderAvailabilityTable() {
     WEEKDAYS.forEach(day => {
         const isChecked = day.defaultHours > 0;
         const tr = document.createElement('tr');
-        
+
         tr.innerHTML = `
             <td>
                 <input type="checkbox" id="check_day_${day.id}" ${isChecked ? 'checked' : ''} onchange="toggleDayRow(${day.id})">
@@ -78,7 +78,7 @@ function toggleDayRow(dayId) {
     const isChecked = document.getElementById(`check_day_${dayId}`).checked;
     const hoursInput = document.getElementById(`hours_day_${dayId}`);
     const timeInput = document.getElementById(`time_day_${dayId}`);
-    
+
     hoursInput.disabled = !isChecked;
     timeInput.disabled = !isChecked;
     if (isChecked && !hoursInput.value) hoursInput.value = 4;
@@ -97,13 +97,23 @@ function setupEventListeners() {
     document.getElementById('saveStateBtn').addEventListener('click', saveStateToLocalStorage);
     document.getElementById('exportIcsBtn').addEventListener('click', exportToICS);
     document.getElementById('btnAddManual').addEventListener('click', addManualActivity);
+    document.getElementById('btn-exportar-pdf').addEventListener('click', () => {
+        queueFichaPdfGeneration({ download: true });
+    });
+    document.getElementById('btn-atualizar-pdf').addEventListener('click', () => {
+        queueFichaPdfGeneration({ download: false });
+    });
+
+    window.addEventListener('beforeunload', () => {
+        if (currentFichaPdfUrl) URL.revokeObjectURL(currentFichaPdfUrl);
+    });
 }
 
 function calculateTotalRequired() {
     const obs = parseFloat(document.getElementById('obsHours').value) || 0;
     const part = parseFloat(document.getElementById('partHours').value) || 0;
     const reg = parseFloat(document.getElementById('regHours').value) || 0;
-    
+
     if (obs < 0 || part < 0 || reg < 0) {
         showAlert('As horas não podem ser valores negativos.');
         return 0;
@@ -189,7 +199,7 @@ function renderBlackoutList() {
 // --- ALGORITMO PRINCIPAL: GERAÇÃO DO CRONOGRAMA ---
 function generateSchedule() {
     hideAlert();
-    
+
     const obsVal = parseFloat(document.getElementById('obsHours').value) || 0;
     const partVal = parseFloat(document.getElementById('partHours').value) || 0;
     const regVal = parseFloat(document.getElementById('regHours').value) || 0;
@@ -398,7 +408,7 @@ function updateUI(totalRequired) {
     if (plannedHours >= totalRequired) {
         const lastActivity = schedule[schedule.length - 1];
         const completionDate = lastActivity ? formatDateBR(lastActivity.date) : '-';
-        
+
         document.getElementById('metricCompletionDate').textContent = completionDate;
 
         if (plannedHours === totalRequired) {
@@ -416,8 +426,9 @@ function updateUI(totalRequired) {
     }
 
     renderScheduleTable();
-    
+
     document.getElementById('scheduleSection').classList.remove('hidden');
+    scheduleFichaPdfPreview();
 }
 
 // function renderScheduleTable() {
@@ -445,7 +456,7 @@ function updateUI(totalRequired) {
 
 //     Object.keys(grouped).sort().forEach(dateKey => {
 //         const group = grouped[dateKey];
-        
+
 //         const headerTr = document.createElement('tr');
 //         headerTr.className = 'date-header-row';
 //         headerTr.innerHTML = `
@@ -579,6 +590,47 @@ function renderScheduleTable() {
             tbody.appendChild(tr);
         });
     });
+
+    renderAtividadesTable(state.schedule);
+}
+
+function renderAtividadesTable(atividades) {
+
+    // 3. Preenche a tabela dinamicamente
+    const tbody = document.querySelector('#pdf-tabela-atividades tbody');
+    tbody.innerHTML = ''; // Limpa antes de popular
+
+    // Insere as atividades do planejamento
+    atividades.forEach(ativ => {
+        let modalidadeClass = 'badge-pill-obs';
+        let modalidade = ativ.modality;
+        if (modalidade == 'Participação') {
+            modalidadeClass = 'badge-pill-part';
+        }
+        else if (modalidade == 'Regência') {
+            modalidadeClass = 'badge-pill-reg';
+        }
+        tbody.innerHTML += `
+            <tr>
+                <td>${formatDate(ativ.date)}</td>
+                <td>${ativ.hours}</td>
+                <td style="text-align: start; vertical-align: baseline;"><span class="badge-pill ${modalidadeClass}">${ativ.modality}</span></td>
+                <td></td>
+            </tr>
+        `;
+    });
+
+    // Insere linhas vazias adicionais para manter o visual de ficha padrão (opcional)
+    for (let i = 0; i < 3; i++) {
+        tbody.innerHTML += `
+            <tr>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+            </tr>
+        `;
+    }
 }
 
 function updateActivity(index, field, value) {
@@ -725,10 +777,10 @@ function getWeekRange(dateStr) {
     const d = new Date(dateStr + 'T00:00:00');
     const day = d.getDay(); // 0 = Domingo, 1 = Segunda, ...
     const diffToMonday = (day === 0 ? -6 : 1 - day);
-    
+
     const monday = new Date(d);
     monday.setDate(d.getDate() + diffToMonday);
-    
+
     const sunday = new Date(monday);
     sunday.setDate(monday.getDate() + 6);
 
@@ -778,15 +830,374 @@ function calculateEndTime(startTimeStr, hours) {
     const endM = totalMinutes % 60;
     return `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
 }
-
 function showAlert(msg) {
     const box = document.getElementById('alertBox');
     box.textContent = msg;
-    box.className = 'alert alert-danger';
     box.classList.remove('hidden');
 }
 
 function hideAlert() {
     const box = document.getElementById('alertBox');
     box.classList.add('hidden');
+}
+
+function formatDate(date) {
+    return date?.split('-').reverse().join('/') || '';
+}
+
+// --- GERAÇÃO, PAGINAÇÃO E VISUALIZAÇÃO DA FICHA EM PDF ---
+let currentFichaPdfUrl = null;
+let pdfPreviewTimer = null;
+let pdfGenerationQueue = Promise.resolve();
+
+function getFichaMetadata() {
+    // Estes valores podem ser substituídos futuramente por campos do formulário.
+    return {
+        nomeAluno: '',
+        nomeOrientador: 'Aurélio Vargas Ramos Júnior',
+        ano: new Date().getFullYear()
+    };
+}
+
+function syncFichaTemplateData() {
+    const metadata = getFichaMetadata();
+
+    renderAtividadesTable(state.schedule);
+    document.getElementById('pdf-nome-aluno').textContent =
+        metadata.nomeAluno || '_______________________________________';
+    document.getElementById('pdf-nome-orientador').textContent =
+        metadata.nomeOrientador || '____________________________';
+    document.getElementById('pdf-ano').textContent = metadata.ano;
+
+    return metadata;
+}
+
+function removeIdsFromClone(element) {
+    element.removeAttribute('id');
+    element.querySelectorAll('[id]').forEach(child => child.removeAttribute('id'));
+    return element;
+}
+
+function createFichaPdfPage(isFirstPage, pageNumber) {
+    const staging = document.getElementById('ficha-pdf-pages');
+    const sourceHeader = document.getElementById('ficha-cabecalho-modelo');
+    const sourceTitle = document.getElementById('ficha-titulo-modelo');
+    const sourceStudentTable = document.getElementById('pdf-tabela-dados-aluno');
+    const sourceActivitiesTable = document.getElementById('pdf-tabela-atividades');
+
+    const page = document.createElement('section');
+    page.className = 'ficha-pdf-page';
+    page.dataset.pageNumber = String(pageNumber);
+
+    const content = document.createElement('div');
+    content.className = 'ficha-pdf-page-content';
+    page.appendChild(content);
+
+    const header = removeIdsFromClone(sourceHeader.cloneNode(true));
+    header.className = 'ficha-page-header';
+    content.appendChild(header);
+
+    const title = removeIdsFromClone(sourceTitle.cloneNode(true));
+    title.className = `ficha-page-title${isFirstPage ? '' : ' is-continuation'}`;
+    if (!isFirstPage) {
+        title.textContent = `${title.textContent.trim()} - CONTINUAÇÃO`;
+    }
+    content.appendChild(title);
+
+    if (isFirstPage) {
+        const studentTable = removeIdsFromClone(sourceStudentTable.cloneNode(true));
+        studentTable.className = 'ficha-page-student-table';
+        content.appendChild(studentTable);
+    }
+
+    const activitiesTable = removeIdsFromClone(sourceActivitiesTable.cloneNode(true));
+    activitiesTable.className = 'ficha-page-activities-table';
+    const tbody = activitiesTable.querySelector('tbody');
+    tbody.innerHTML = '';
+    content.appendChild(activitiesTable);
+
+    const pageNumberElement = document.createElement('div');
+    pageNumberElement.className = 'ficha-pdf-page-number';
+    pageNumberElement.textContent = `Página ${pageNumber}`;
+    page.appendChild(pageNumberElement);
+
+    staging.appendChild(page);
+
+    return { page, content, tbody, pageNumberElement };
+}
+
+function pageHasOverflow(page) {
+    // Pequena tolerância para diferenças de arredondamento entre px e mm.
+    return page.scrollHeight > page.clientHeight + 2;
+}
+
+function waitForNextPaint() {
+    return new Promise(resolve => {
+        requestAnimationFrame(() => requestAnimationFrame(resolve));
+    });
+}
+
+async function waitForImages(root) {
+    const images = Array.from(root.querySelectorAll('img'));
+
+    await Promise.all(images.map(image => {
+        if (image.complete && image.naturalWidth > 0) {
+            return typeof image.decode === 'function'
+                ? image.decode().catch(() => undefined)
+                : Promise.resolve();
+        }
+
+        return new Promise(resolve => {
+            const finish = () => resolve();
+            image.addEventListener('load', finish, { once: true });
+            image.addEventListener('error', finish, { once: true });
+        });
+    }));
+}
+
+async function buildPaginatedFicha() {
+    syncFichaTemplateData();
+
+    const staging = document.getElementById('ficha-pdf-pages');
+    const sourceRows = Array.from(
+        document.querySelectorAll('#pdf-tabela-atividades tbody tr')
+    ).map(row => row.cloneNode(true));
+
+    staging.innerHTML = '';
+
+    let pageNumber = 1;
+    let currentPage = createFichaPdfPage(true, pageNumber);
+
+    await waitForImages(staging);
+    await waitForNextPaint();
+
+    for (const sourceRow of sourceRows) {
+        const row = sourceRow.cloneNode(true);
+        currentPage.tbody.appendChild(row);
+
+        if (pageHasOverflow(currentPage.page)) {
+            row.remove();
+            pageNumber += 1;
+            currentPage = createFichaPdfPage(false, pageNumber);
+            currentPage.tbody.appendChild(row);
+
+            if (pageHasOverflow(currentPage.page)) {
+                throw new Error('Uma linha da ficha é maior do que a área útil de uma página A4.');
+            }
+        }
+    }
+
+    const signatures = removeIdsFromClone(
+        document.getElementById('ficha-assinaturas-modelo').cloneNode(true)
+    );
+    signatures.className = 'ficha-page-signatures';
+    currentPage.content.appendChild(signatures);
+
+    if (pageHasOverflow(currentPage.page)) {
+        signatures.remove();
+
+        // Leva a última linha para a página das assinaturas, garantindo que
+        // essa nova página também contenha a tabela e seu thead.
+        const lastRow = currentPage.tbody.lastElementChild;
+        pageNumber += 1;
+        const signaturesPage = createFichaPdfPage(false, pageNumber);
+
+        if (lastRow) {
+            signaturesPage.tbody.appendChild(lastRow);
+        }
+        signaturesPage.content.appendChild(signatures);
+        currentPage = signaturesPage;
+
+        if (pageHasOverflow(currentPage.page)) {
+            throw new Error('Não foi possível acomodar as assinaturas na página A4.');
+        }
+    }
+
+    const pages = Array.from(staging.querySelectorAll('.ficha-pdf-page'));
+    const totalPages = pages.length;
+    pages.forEach((page, index) => {
+        const number = page.querySelector('.ficha-pdf-page-number');
+        number.textContent = `Página ${index + 1} de ${totalPages}`;
+    });
+
+    await waitForImages(staging);
+    await waitForNextPaint();
+
+    return staging;
+}
+
+async function createFichaPdfBlob() {
+    const staging = await buildPaginatedFicha();
+    const pageElements = Array.from(staging.querySelectorAll('.ficha-pdf-page'));
+
+    if (pageElements.length === 0) {
+        throw new Error('Nenhuma página foi montada para a ficha.');
+    }
+
+    const offsets = pageElements.map(page => page.offsetTop);
+    const currentScrollY = window.scrollY;
+    const previousInlineStyle = staging.getAttribute('style');
+
+    const baseOptions = {
+        margin: 0,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: {
+            scale: 1.6,
+            useCORS: true,
+            allowTaint: false,
+            logging: false,
+            backgroundColor: '#ffffff',
+            scrollX: 0,
+            scrollY: 0
+        },
+        jsPDF: {
+            unit: 'mm',
+            format: 'a4',
+            orientation: 'portrait',
+            compress: true
+        }
+    };
+
+    // Cada página é capturada separadamente. Isso evita que o html2pdf
+    // transforme todo o conjunto em uma única imagem longa e garante que o
+    // cabeçalho e o thead já presentes em cada página sejam preservados.
+    staging.style.position = 'absolute';
+    staging.style.left = '0';
+    staging.style.zIndex = '-1';
+
+    try {
+        staging.style.top = `${currentScrollY - offsets[0]}px`;
+        await waitForNextPaint();
+
+        const firstWorker = html2pdf()
+            .set(baseOptions)
+            .from(pageElements[0])
+            .toPdf();
+
+        const pdf = await firstWorker.get('pdf');
+
+        // Uma página com exatamente 297 mm pode gerar uma página vazia extra
+        // por arredondamento de pixels. Mantemos somente a primeira.
+        while (pdf.getNumberOfPages() > 1) {
+            pdf.deletePage(pdf.getNumberOfPages());
+        }
+
+        for (let index = 1; index < pageElements.length; index += 1) {
+            staging.style.top = `${currentScrollY - offsets[index]}px`;
+            await waitForNextPaint();
+
+            const canvasWorker = html2pdf()
+                .set(baseOptions)
+                .from(pageElements[index])
+                .toCanvas();
+
+            const canvas = await canvasWorker.get('canvas');
+            const imageData = canvas.toDataURL('image/jpeg', 0.98);
+
+            pdf.addPage('a4', 'portrait');
+            pdf.addImage(imageData, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
+        }
+
+        return pdf.output('blob');
+    } finally {
+        if (previousInlineStyle === null) {
+            staging.removeAttribute('style');
+        } else {
+            staging.setAttribute('style', previousInlineStyle);
+        }
+    }
+}
+
+function updateFichaPdfViewer(blob) {
+    const viewer = document.getElementById('ficha-pdf-viewer');
+    const placeholder = document.getElementById('pdf-viewer-placeholder');
+
+    if (currentFichaPdfUrl) {
+        URL.revokeObjectURL(currentFichaPdfUrl);
+    }
+
+    currentFichaPdfUrl = URL.createObjectURL(blob);
+    viewer.src = `${currentFichaPdfUrl}#view=FitH&toolbar=1&navpanes=0`;
+    placeholder.classList.add('hidden');
+}
+
+function downloadFichaPdf(blob, metadata) {
+    const safeName = (metadata.nomeAluno || 'Aluno')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-zA-Z0-9_-]+/g, '_')
+        .replace(/^_+|_+$/g, '');
+
+    const downloadUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = `Ficha_Acompanhamento_${safeName || 'Aluno'}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+
+    setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
+}
+
+async function generateFichaPdf({ download = false } = {}) {
+    const exportButton = document.getElementById('btn-exportar-pdf');
+    const refreshButton = document.getElementById('btn-atualizar-pdf');
+    const status = document.getElementById('pdf-preview-status');
+
+    if (!state.schedule || state.schedule.length === 0) {
+        showAlert('Gere o planejamento antes de criar a ficha em PDF.');
+        status.textContent = 'Não há atividades para gerar a ficha.';
+        return;
+    }
+
+    exportButton.disabled = true;
+    refreshButton.disabled = true;
+    status.textContent = download
+        ? 'Gerando e preparando o arquivo PDF...'
+        : 'Atualizando a visualização do PDF...';
+
+    try {
+        const metadata = getFichaMetadata();
+        const blob = await createFichaPdfBlob();
+        updateFichaPdfViewer(blob);
+
+        if (download) {
+            downloadFichaPdf(blob, metadata);
+            status.textContent = 'PDF atualizado e arquivo exportado com sucesso.';
+        } else {
+            status.textContent = 'Visualização do PDF atualizada.';
+        }
+    } catch (error) {
+        console.error('Erro ao gerar PDF:', error);
+        status.textContent = 'Não foi possível gerar o PDF.';
+        showAlert(`Erro ao gerar a ficha em PDF: ${error.message}`);
+    } finally {
+        document.getElementById('ficha-pdf-viewer').classList.remove('hidden');
+        exportButton.disabled = false;
+        refreshButton.disabled = false;
+        document.getElementById('ficha-pdf-pages').innerHTML = '';
+    }
+}
+
+function queueFichaPdfGeneration(options) {
+    pdfGenerationQueue = pdfGenerationQueue
+        .catch(() => undefined)
+        .then(() => generateFichaPdf(options));
+
+    return pdfGenerationQueue;
+}
+
+function scheduleFichaPdfPreview() {
+    clearTimeout(pdfPreviewTimer);
+
+    if (!state.schedule || state.schedule.length === 0) {
+        return;
+    }
+
+    const status = document.getElementById('pdf-preview-status');
+    status.textContent = 'Aguardando atualização da visualização...';
+
+    pdfPreviewTimer = setTimeout(() => {
+        queueFichaPdfGeneration({ download: false });
+    }, 500);
 }
