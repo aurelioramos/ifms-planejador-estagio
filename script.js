@@ -22,6 +22,7 @@ let state = {
     studentName: '',
     advisorName: '',
     supervisorName: '',
+    internshipStage: 'III',
     availability: {},
     blackoutDates: [
         { date: '2026-09-07', desc: 'Independência do Brasil' },
@@ -98,6 +99,8 @@ function setupEventListeners() {
     document.getElementById('addBlackoutBtn').addEventListener('click', addBlackoutDate);
     document.getElementById('generateScheduleBtn').addEventListener('click', generateSchedule);
     document.getElementById('saveStateBtn').addEventListener('click', saveStateToLocalStorage);
+    document.getElementById('generateScheduleBtnAction').addEventListener('click', generateSchedule);
+    document.getElementById('saveStateBtnAction').addEventListener('click', saveStateToLocalStorage);
     document.getElementById('removeStateBtn').addEventListener('click', removeStoredPlanningData);
     document.getElementById('exportIcsBtn').addEventListener('click', exportToICS);
     document.getElementById('btnAddManual').addEventListener('click', addManualActivity);
@@ -111,6 +114,14 @@ function setupEventListeners() {
     ['studentName', 'advisorName', 'supervisorName'].forEach(id => {
         document.getElementById(id).addEventListener('input', () => {
             state[id] = document.getElementById(id).value;
+            if (state.schedule.length > 0) schedulePdfPreviewRefresh();
+        });
+    });
+
+    document.querySelectorAll('input[name="internshipStage"]').forEach(radio => {
+        radio.addEventListener('change', () => {
+            if (!radio.checked) return;
+            state.internshipStage = radio.value;
             if (state.schedule.length > 0) schedulePdfPreviewRefresh();
         });
     });
@@ -776,6 +787,7 @@ function saveStateToLocalStorage() {
     state.studentName = document.getElementById('studentName').value.trim();
     state.advisorName = document.getElementById('advisorName').value.trim();
     state.supervisorName = document.getElementById('supervisorName').value.trim();
+    state.internshipStage = document.querySelector('input[name="internshipStage"]:checked')?.value || 'III';
 
     localStorage.setItem('estagio_planning_state', JSON.stringify(state));
     alert('Planejamento salvo com sucesso!');
@@ -843,6 +855,9 @@ function loadStateFromLocalStorage() {
             document.getElementById('studentName').value = state.studentName || '';
             document.getElementById('advisorName').value = state.advisorName || '';
             document.getElementById('supervisorName').value = state.supervisorName || '';
+            state.internshipStage = state.internshipStage || 'III';
+            const savedStageRadio = document.querySelector(`input[name="internshipStage"][value="${state.internshipStage}"]`);
+            if (savedStageRadio) savedStageRadio.checked = true;
             state.schedule = (state.schedule || []).map(item => ({ ...item, description: item.description || '' }));
 
             if (state.blackoutDates) {
@@ -971,6 +986,7 @@ function getFichaMetadata() {
         nomeAluno: document.getElementById('studentName').value.trim(),
         nomeOrientador: document.getElementById('advisorName').value.trim(),
         nomeSupervisor: document.getElementById('supervisorName').value.trim(),
+        internshipStage: document.querySelector('input[name="internshipStage"]:checked')?.value || 'III',
         ano: new Date().getFullYear()
     };
 }
@@ -985,6 +1001,13 @@ function syncFichaTemplateData() {
         metadata.nomeOrientador || '____________________________';
     document.getElementById('pdf-nome-supervisor').textContent =
         metadata.nomeSupervisor || '____________________________';
+
+    const stageOrder = ['I', 'II', 'III', 'IV'];
+    const selectedStage = stageOrder.includes(metadata.internshipStage) ? metadata.internshipStage : 'III';
+    document.getElementById('pdf-estagio-selecionado').innerHTML = stageOrder
+        .map((stage, index) => `${index === 2 ? '<br>' : ''}( ${stage === selectedStage ? 'X' : '&nbsp;'} ) Estágio Supervisionado ${stage}`)
+        .join(' ');
+
     document.getElementById('pdf-ano').textContent = metadata.ano;
 
     return metadata;

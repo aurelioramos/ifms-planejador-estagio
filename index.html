@@ -79,6 +79,27 @@
                             <label for="supervisorName">Nome do Supervisor</label>
                             <input type="text" id="supervisorName" placeholder="Nome completo do supervisor de estágio">
                         </div>
+                        <fieldset class="form-group internship-stage-group">
+                            <legend>Estágio Supervisionado</legend>
+                            <div class="internship-stage-options">
+                                <label class="internship-stage-option">
+                                    <input type="radio" name="internshipStage" value="I">
+                                    <span>Estágio Supervisionado I</span>
+                                </label>
+                                <label class="internship-stage-option">
+                                    <input type="radio" name="internshipStage" value="II">
+                                    <span>Estágio Supervisionado II</span>
+                                </label>
+                                <label class="internship-stage-option">
+                                    <input type="radio" name="internshipStage" value="III" checked>
+                                    <span>Estágio Supervisionado III</span>
+                                </label>
+                                <label class="internship-stage-option">
+                                    <input type="radio" name="internshipStage" value="IV">
+                                    <span>Estágio Supervisionado IV</span>
+                                </label>
+                            </div>
+                        </fieldset>
                     </div>
                 </div>
 
@@ -152,6 +173,11 @@
 
         </form>
 
+        <div class="actions-bar">
+            <button type="button" class="btn btn-primary" id="generateScheduleBtnAction">Gerar Planejamento</button>
+            <button type="button" class="btn btn-outline" id="saveStateBtnAction">Salvar Dados</button>
+        </div>
+
         <!-- PLANEJAMENTO - CRONOGRAMA / CALENDÁRIO -->
         <section id="scheduleSection" class="card hidden">
             <h2>Cronograma Detalhado</h2>
@@ -203,7 +229,7 @@
             <!-- CAMPOS PARA ADICIONAR NOVA ATIVIDADE MANUAL -->
             <div class="manual-activity-box">
                 <h3>+ Adicionar Nova Atividade Manual</h3>
-                <div class="form-grid align-end">
+                <div class="manual-activity-main-row">
                     <div class="form-group">
                         <label for="manualDate">Data</label>
                         <input type="date" id="manualDate">
@@ -224,13 +250,13 @@
                         <label for="manualTime">Horário Inicial</label>
                         <input type="time" id="manualTime" value="08:00">
                     </div>
-                    <div class="form-group manual-description-group">
-                        <label for="manualDescription">Descrição sumária das atividades</label>
-                        <textarea id="manualDescription" rows="2" placeholder="Ex: Observação da aula e registro das estratégias didáticas utilizadas."></textarea>
-                    </div>
-                    <div class="form-group">
+                    <div class="form-group manual-insert-action">
                         <button type="button" class="btn btn-secondary" id="btnAddManual">Inserir Atividade</button>
                     </div>
+                </div>
+                <div class="form-group manual-description-group">
+                    <label for="manualDescription">Descrição sumária das atividades</label>
+                    <textarea id="manualDescription" rows="2" placeholder="Ex: Observação da aula e registro das estratégias didáticas utilizadas."></textarea>
                 </div>
             </div>
 
@@ -302,7 +328,7 @@
                                 </td>
                             </tr>
                             <tr>
-                                <td>
+                                <td id="pdf-estagio-selecionado">
                                     ( &nbsp; ) Estágio Supervisionado I
                                     ( &nbsp; ) Estágio Supervisionado II
                                     <br>( X ) Estágio Supervisionado III

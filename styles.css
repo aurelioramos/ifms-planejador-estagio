@@ -1382,3 +1382,97 @@ select {
         white-space: nowrap;
     }
 }
+
+
+/* Seleção do Estágio Supervisionado */
+.internship-stage-group {
+    grid-column: 1 / -1;
+    border: 0;
+    padding: 0;
+    margin: 0;
+    min-width: 0;
+}
+
+.internship-stage-group legend {
+    margin-bottom: 10px;
+    font-weight: 600;
+}
+
+.internship-stage-options {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+}
+
+.internship-stage-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 12px;
+    border: 1px solid var(--border-color, #d9dee3);
+    border-radius: 10px;
+    cursor: pointer;
+    background: #fff;
+}
+
+.internship-stage-option:has(input:checked) {
+    border-color: #32a041;
+    background: rgba(50, 160, 65, 0.08);
+}
+
+.internship-stage-option input {
+    flex: 0 0 auto;
+}
+
+@media (min-width: 700px) {
+    .internship-stage-options {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (min-width: 1100px) {
+    .internship-stage-options {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+}
+
+/* Adição manual: dados principais na primeira linha e descrição em linha própria. */
+.manual-activity-main-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+    align-items: end;
+}
+
+.manual-description-group {
+    width: 100%;
+    min-width: 0;
+    margin-top: 12px;
+}
+
+.manual-description-group textarea {
+    width: 100%;
+    min-height: 76px;
+    resize: vertical;
+}
+
+.manual-insert-action .btn {
+    width: 100%;
+}
+
+@media (min-width: 600px) {
+    .manual-activity-main-row {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (min-width: 900px) {
+    .manual-activity-main-row {
+        grid-template-columns: minmax(150px, 1.1fr) minmax(180px, 1.3fr) minmax(130px, .8fr) minmax(145px, .9fr) auto;
+    }
+
+    .manual-insert-action .btn {
+        width: auto;
+        white-space: nowrap;
+    }
+}
