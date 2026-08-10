@@ -764,7 +764,7 @@ function renderAtividadesTable(atividades) {
         <th>Data</th>
         <th>Nº de horas</th>
         <th>Descrição Sumária das Atividades</th>
-        ${showSupervisorSignatureColumn ? '<th class="pdf-supervisor-signature-header">Assinatura do Supervisor</th>' : ''}
+        ${showSupervisorSignatureColumn ? '<th class="pdf-supervisor-signature-header">Visto do Supervisor</th>' : ''}
     `;
     tbody.innerHTML = '';
 
@@ -1126,11 +1126,11 @@ function syncFichaTemplateData() {
 
     renderAtividadesTable(state.schedule);
     document.getElementById('pdf-nome-aluno').textContent =
-        metadata.nomeAluno || '_______________________________________';
+        metadata.nomeAluno || '';
     document.getElementById('pdf-nome-orientador').textContent =
-        metadata.nomeOrientador || '____________________________';
+        metadata.nomeOrientador || '';
     document.getElementById('pdf-nome-supervisor').textContent =
-        metadata.nomeSupervisor || '____________________________';
+        metadata.nomeSupervisor || '';
 
     const stageOrder = ['I', 'II', 'III', 'IV'];
     const selectedStage = stageOrder.includes(metadata.internshipStage) ? metadata.internshipStage : 'III';

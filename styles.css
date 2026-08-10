@@ -495,9 +495,9 @@ th {
 
 #ficha-titulo-modelo {
     margin: 0 0 6mm;
-    font-size: 13px;
+    font-size: 14px;
     text-align: center;
-    text-decoration: underline;
+    /*text-decoration: underline;*/
 }
 
 #pdf-tabela-dados-aluno,
@@ -512,7 +512,6 @@ th {
 }
 
 #pdf-tabela-dados-aluno tr {
-    height: 18mm;
     vertical-align: top;
 }
 
@@ -665,9 +664,9 @@ th {
 
 .ficha-pdf-page .ficha-page-title {
     margin: 0 0 5mm;
-    font-size: 12px;
+    font-size: 14px;
     text-align: center;
-    text-decoration: underline;
+    /*text-decoration: underline;*/
 }
 
 .ficha-pdf-page .ficha-page-title.is-continuation {
