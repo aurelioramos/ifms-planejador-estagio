@@ -19,6 +19,9 @@ let state = {
     regHours: 15,
     startDate: '',
     endDate: '',
+    studentName: '',
+    advisorName: '',
+    supervisorName: '',
     availability: {},
     blackoutDates: [
         { date: '2026-09-07', desc: 'Independência do Brasil' },
@@ -95,13 +98,21 @@ function setupEventListeners() {
     document.getElementById('addBlackoutBtn').addEventListener('click', addBlackoutDate);
     document.getElementById('generateScheduleBtn').addEventListener('click', generateSchedule);
     document.getElementById('saveStateBtn').addEventListener('click', saveStateToLocalStorage);
+    document.getElementById('removeStateBtn').addEventListener('click', removeStoredPlanningData);
     document.getElementById('exportIcsBtn').addEventListener('click', exportToICS);
     document.getElementById('btnAddManual').addEventListener('click', addManualActivity);
     document.getElementById('btn-exportar-pdf').addEventListener('click', () => {
         queueFichaPdfGeneration({ download: true });
     });
     document.getElementById('btn-atualizar-pdf').addEventListener('click', () => {
-        queueFichaPdfGeneration({ download: false });
+        scheduleFichaPdfPreview({ immediate: true });
+    });
+
+    ['studentName', 'advisorName', 'supervisorName'].forEach(id => {
+        document.getElementById(id).addEventListener('input', () => {
+            state[id] = document.getElementById(id).value;
+            if (state.schedule.length > 0) schedulePdfPreviewRefresh();
+        });
     });
 
     window.addEventListener('beforeunload', () => {
@@ -294,7 +305,8 @@ function generateSchedule() {
                     modality: mod.type,
                     hours: hoursToAssign,
                     startTime: startTime,
-                    endTime: calculateEndTime(startTime, hoursToAssign)
+                    endTime: calculateEndTime(startTime, hoursToAssign),
+                    description: ''
                 });
 
                 mod.remaining -= hoursToAssign;
@@ -319,6 +331,7 @@ function addManualActivity() {
     const modalityVal = document.getElementById('manualModality').value;
     const hoursVal = parseFloat(document.getElementById('manualHours').value);
     const timeVal = document.getElementById('manualTime').value;
+    const descriptionVal = document.getElementById('manualDescription').value.trim();
 
     if (!dateVal) {
         showAlert('Por favor, informe a data para a nova atividade.');
@@ -354,7 +367,8 @@ function addManualActivity() {
         modality: modalityVal,
         hours: hoursVal,
         startTime: timeVal || '08:00',
-        endTime: calculateEndTime(timeVal || '08:00', hoursVal)
+        endTime: calculateEndTime(timeVal || '08:00', hoursVal),
+        description: descriptionVal
     });
 
     state.schedule.sort((a, b) => new Date(a.date) - new Date(b.date));
@@ -363,6 +377,7 @@ function addManualActivity() {
     document.getElementById('manualModality').value = 'Observação';
     document.getElementById('manualHours').value = '';
     document.getElementById('manualTime').value = '08:00';
+    document.getElementById('manualDescription').value = '';
 
     updateUI();
 }
@@ -436,7 +451,7 @@ function updateUI(totalRequired) {
 //     tbody.innerHTML = '';
 
 //     if (state.schedule.length === 0) {
-//         tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Nenhuma atividade no cronograma.</td></tr>';
+//         tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">Nenhuma atividade no cronograma.</td></tr>';
 //         return;
 //     }
 
@@ -508,7 +523,7 @@ function renderScheduleTable() {
     tbody.innerHTML = '';
 
     if (state.schedule.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Nenhuma atividade no cronograma.</td></tr>';
+        tbody.innerHTML = '<tr class="schedule-empty-row"><td colspan="7" style="text-align:center;">Nenhuma atividade no cronograma.</td></tr>';
         return;
     }
 
@@ -559,10 +574,11 @@ function renderScheduleTable() {
             const tr = document.createElement('tr');
             const index = item.originalIndex;
 
-            let badgeClass = 'badge-obs';
-            let badgeCode = '[OBS]';
-            if (item.modality === 'Participação') { badgeClass = 'badge-part'; badgeCode = '[PAR]'; }
-            if (item.modality === 'Regência') { badgeClass = 'badge-reg'; badgeCode = '[REG]'; }
+            const modalitySelectClass = item.modality === 'Participação'
+                ? 'modality-select modality-select-part'
+                : item.modality === 'Regência'
+                    ? 'modality-select modality-select-reg'
+                    : 'modality-select modality-select-obs';
 
             tr.innerHTML = `
                 <td>
@@ -570,12 +586,11 @@ function renderScheduleTable() {
                 </td>
                 <td>${item.dayOfWeek}</td>
                 <td>
-                    <select onchange="updateActivity(${index}, 'modality', this.value)">
-                        <option value="Observação" ${item.modality === 'Observação' ? 'selected' : ''}>Observação</option>
-                        <option value="Participação" ${item.modality === 'Participação' ? 'selected' : ''}>Participação</option>
-                        <option value="Regência" ${item.modality === 'Regência' ? 'selected' : ''}>Regência</option>
+                    <select class="${modalitySelectClass}" onchange="updateActivity(${index}, 'modality', this.value)">
+                        <option class="modality-option-obs" value="Observação" ${item.modality === 'Observação' ? 'selected' : ''}>Observação</option>
+                        <option class="modality-option-part" value="Participação" ${item.modality === 'Participação' ? 'selected' : ''}>Participação</option>
+                        <option class="modality-option-reg" value="Regência" ${item.modality === 'Regência' ? 'selected' : ''}>Regência</option>
                     </select>
-                    <span class="badge ${badgeClass}">${badgeCode}</span>
                 </td>
                 <td>
                     <input type="number" min="0.5" max="6" step="0.5" value="${item.hours}" style="width:70px" onchange="updateActivity(${index}, 'hours', this.value)">
@@ -583,11 +598,28 @@ function renderScheduleTable() {
                 <td>
                     <input type="time" value="${item.startTime || ''}" onchange="updateActivity(${index}, 'startTime', this.value)">
                 </td>
-                <td>
-                    <button type="button" class="btn btn-sm btn-danger" onclick="deleteActivity(${index})">Remover</button>
+                <td class="schedule-actions-cell">
+                    <button type="button" class="btn btn-sm btn-danger btn-icon" onclick="deleteActivity(${index})" aria-label="Remover atividade" title="Remover atividade">
+                        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                            <path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm-2 6h10l-.7 11H7.7L7 9Zm3 2v7h2v-7h-2Zm4 0v7h2v-7h-2Z" fill="currentColor"/>
+                        </svg>
+                    </button>
                 </td>
             `;
+            tr.classList.add('activity-row');
             tbody.appendChild(tr);
+
+            const descriptionTr = document.createElement('tr');
+            descriptionTr.className = 'activity-description-row';
+            descriptionTr.innerHTML = `
+                <td colspan="6">
+                    <label class="schedule-description-label" for="activity-description-${index}">
+                        Descrição sumária das atividades <span>(opcional)</span>
+                    </label>
+                    <textarea id="activity-description-${index}" class="schedule-description" rows="2" placeholder="Descreva resumidamente as atividades realizadas" onchange="updateActivity(${index}, 'description', this.value)">${escapeHtml(item.description || '')}</textarea>
+                </td>
+            `;
+            tbody.appendChild(descriptionTr);
         });
     });
 
@@ -614,7 +646,7 @@ function renderAtividadesTable(atividades) {
             <tr>
                 <td>${formatDate(ativ.date)}</td>
                 <td>${ativ.hours}</td>
-                <td style="text-align: start; vertical-align: baseline;"><span class="badge-pill ${modalidadeClass}">${ativ.modality}</span></td>
+                <td style="text-align: start; vertical-align: baseline; white-space: pre-wrap; overflow-wrap: anywhere;">${escapeHtml(ativ.description || '')}</td>
                 <td></td>
             </tr>
         `;
@@ -741,9 +773,61 @@ function saveStateToLocalStorage() {
     state.regHours = document.getElementById('regHours').value;
     state.startDate = document.getElementById('startDate').value;
     state.endDate = document.getElementById('endDate').value;
+    state.studentName = document.getElementById('studentName').value.trim();
+    state.advisorName = document.getElementById('advisorName').value.trim();
+    state.supervisorName = document.getElementById('supervisorName').value.trim();
 
     localStorage.setItem('estagio_planning_state', JSON.stringify(state));
     alert('Planejamento salvo com sucesso!');
+}
+
+function removeStoredPlanningData() {
+    // Remove somente os dados persistidos e o planejamento gerado.
+    // Os campos de configuração permanecem disponíveis para o usuário editar
+    // e gerar um novo planejamento imediatamente.
+    localStorage.removeItem('estagio_planning_state');
+
+    // Invalida/cancela qualquer atualização de pré-visualização ainda agendada.
+    pdfPreviewVersion += 1;
+    pdfPreviewPending = false;
+    clearTimeout(pdfPreviewTimer);
+    pdfPreviewTimer = null;
+
+    if (pdfIdleHandle !== null && typeof cancelIdleCallback === 'function') {
+        cancelIdleCallback(pdfIdleHandle);
+    }
+    pdfIdleHandle = null;
+
+    // Limpa o planejamento em memória e na interface.
+    state.schedule = [];
+    const scheduleBody = document.getElementById('scheduleBody');
+    if (scheduleBody) scheduleBody.innerHTML = '';
+
+    const scheduleSection = document.getElementById('scheduleSection');
+    if (scheduleSection) scheduleSection.classList.add('hidden');
+
+    // Limpa a pré-visualização do PDF e libera a URL temporária.
+    const viewer = document.getElementById('ficha-pdf-viewer');
+    const placeholder = document.getElementById('pdf-viewer-placeholder');
+    const status = document.getElementById('pdf-preview-status');
+
+    if (currentFichaPdfUrl) {
+        URL.revokeObjectURL(currentFichaPdfUrl);
+        currentFichaPdfUrl = null;
+    }
+
+    if (viewer) {
+        viewer.removeAttribute('src');
+        viewer.classList.add('hidden');
+    }
+    if (placeholder) placeholder.classList.remove('hidden');
+    if (status) status.textContent = 'Gere ou atualize o planejamento para visualizar a ficha.';
+
+    const staging = document.getElementById('ficha-pdf-pages');
+    if (staging) staging.innerHTML = '';
+
+    hideAlert();
+    showAlert('Dados salvos, planejamento e pré-visualização do PDF foram removidos.');
 }
 
 function loadStateFromLocalStorage() {
@@ -756,6 +840,10 @@ function loadStateFromLocalStorage() {
             document.getElementById('regHours').value = state.regHours || 15;
             if (state.startDate) document.getElementById('startDate').value = state.startDate;
             if (state.endDate) document.getElementById('endDate').value = state.endDate;
+            document.getElementById('studentName').value = state.studentName || '';
+            document.getElementById('advisorName').value = state.advisorName || '';
+            document.getElementById('supervisorName').value = state.supervisorName || '';
+            state.schedule = (state.schedule || []).map(item => ({ ...item, description: item.description || '' }));
 
             if (state.blackoutDates) {
                 state.blackoutDates.sort((a, b) => new Date(a.date) - new Date(b.date));
@@ -841,6 +929,15 @@ function hideAlert() {
     box.classList.add('hidden');
 }
 
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
 function formatDate(date) {
     return date?.split('-').reverse().join('/') || '';
 }
@@ -848,13 +945,32 @@ function formatDate(date) {
 // --- GERAÇÃO, PAGINAÇÃO E VISUALIZAÇÃO DA FICHA EM PDF ---
 let currentFichaPdfUrl = null;
 let pdfPreviewTimer = null;
+let pdfIdleHandle = null;
 let pdfGenerationQueue = Promise.resolve();
+let pdfGenerationRunning = false;
+let pdfPreviewPending = false;
+let pdfPreviewVersion = 0;
+
+function yieldToBrowser() {
+    return new Promise(resolve => setTimeout(resolve, 0));
+}
+
+function cancelScheduledPdfPreview() {
+    clearTimeout(pdfPreviewTimer);
+    pdfPreviewTimer = null;
+
+    if (pdfIdleHandle !== null && typeof cancelIdleCallback === 'function') {
+        cancelIdleCallback(pdfIdleHandle);
+    }
+    pdfIdleHandle = null;
+}
+
 
 function getFichaMetadata() {
-    // Estes valores podem ser substituídos futuramente por campos do formulário.
     return {
-        nomeAluno: '',
-        nomeOrientador: 'Aurélio Vargas Ramos Júnior',
+        nomeAluno: document.getElementById('studentName').value.trim(),
+        nomeOrientador: document.getElementById('advisorName').value.trim(),
+        nomeSupervisor: document.getElementById('supervisorName').value.trim(),
         ano: new Date().getFullYear()
     };
 }
@@ -867,6 +983,8 @@ function syncFichaTemplateData() {
         metadata.nomeAluno || '_______________________________________';
     document.getElementById('pdf-nome-orientador').textContent =
         metadata.nomeOrientador || '____________________________';
+    document.getElementById('pdf-nome-supervisor').textContent =
+        metadata.nomeSupervisor || '____________________________';
     document.getElementById('pdf-ano').textContent = metadata.ano;
 
     return metadata;
@@ -971,9 +1089,16 @@ async function buildPaginatedFicha() {
     await waitForImages(staging);
     await waitForNextPaint();
 
-    for (const sourceRow of sourceRows) {
+    for (let rowIndex = 0; rowIndex < sourceRows.length; rowIndex += 1) {
+        const sourceRow = sourceRows[rowIndex];
         const row = sourceRow.cloneNode(true);
         currentPage.tbody.appendChild(row);
+
+        // Em cronogramas grandes, devolve periodicamente o controle ao navegador
+        // para que rolagem, cliques e digitação continuem responsivos.
+        if (rowIndex > 0 && rowIndex % 20 === 0) {
+            await yieldToBrowser();
+        }
 
         if (pageHasOverflow(currentPage.page)) {
             row.remove();
@@ -1026,7 +1151,7 @@ async function buildPaginatedFicha() {
     return staging;
 }
 
-async function createFichaPdfBlob() {
+async function createFichaPdfBlob({ preview = false } = {}) {
     const staging = await buildPaginatedFicha();
     const pageElements = Array.from(staging.querySelectorAll('.ficha-pdf-page'));
 
@@ -1034,21 +1159,31 @@ async function createFichaPdfBlob() {
         throw new Error('Nenhuma página foi montada para a ficha.');
     }
 
-    const offsets = pageElements.map(page => page.offsetTop);
-    const currentScrollY = window.scrollY;
-    const previousInlineStyle = staging.getAttribute('style');
-
     const baseOptions = {
         margin: 0,
-        image: { type: 'jpeg', quality: 0.98 },
+        image: { type: 'jpeg', quality: preview ? 0.84 : 0.98 },
         html2canvas: {
-            scale: 1.6,
+            // A pré-visualização prioriza fluidez. A exportação mantém alta qualidade.
+            scale: preview ? 0.9 : 1.6,
             useCORS: true,
             allowTaint: false,
             logging: false,
             backgroundColor: '#ffffff',
             scrollX: 0,
-            scrollY: 0
+            scrollY: 0,
+            // A estrutura usada para montar o PDF permanece invisível no DOM
+            // real. Ela só é exibida dentro do documento clonado pelo
+            // html2canvas, impedindo que a tabela "pisque" atrás da interface.
+            onclone: (clonedDocument) => {
+                const clonedStaging = clonedDocument.getElementById('ficha-pdf-pages');
+                if (clonedStaging) {
+                    clonedStaging.style.visibility = 'visible';
+                    clonedStaging.style.position = 'absolute';
+                    clonedStaging.style.left = '0';
+                    clonedStaging.style.top = '0';
+                    clonedStaging.style.zIndex = '0';
+                }
+            }
         },
         jsPDF: {
             unit: 'mm',
@@ -1061,14 +1196,8 @@ async function createFichaPdfBlob() {
     // Cada página é capturada separadamente. Isso evita que o html2pdf
     // transforme todo o conjunto em uma única imagem longa e garante que o
     // cabeçalho e o thead já presentes em cada página sejam preservados.
-    staging.style.position = 'absolute';
-    staging.style.left = '0';
-    staging.style.zIndex = '-1';
-
+    // Não reposicionamos mais o staging na área visível da aplicação.
     try {
-        staging.style.top = `${currentScrollY - offsets[0]}px`;
-        await waitForNextPaint();
-
         const firstWorker = html2pdf()
             .set(baseOptions)
             .from(pageElements[0])
@@ -1083,28 +1212,25 @@ async function createFichaPdfBlob() {
         }
 
         for (let index = 1; index < pageElements.length; index += 1) {
-            staging.style.top = `${currentScrollY - offsets[index]}px`;
-            await waitForNextPaint();
-
             const canvasWorker = html2pdf()
                 .set(baseOptions)
                 .from(pageElements[index])
                 .toCanvas();
 
             const canvas = await canvasWorker.get('canvas');
-            const imageData = canvas.toDataURL('image/jpeg', 0.98);
+            const imageData = canvas.toDataURL('image/jpeg', preview ? 0.84 : 0.98);
 
             pdf.addPage('a4', 'portrait');
             pdf.addImage(imageData, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
+
+            // Permite que o navegador processe eventos entre páginas.
+            await yieldToBrowser();
         }
 
         return pdf.output('blob');
     } finally {
-        if (previousInlineStyle === null) {
-            staging.removeAttribute('style');
-        } else {
-            staging.setAttribute('style', previousInlineStyle);
-        }
+        // O staging permanece permanentemente fora da interface e invisível.
+        // A limpeza das páginas temporárias é feita ao final da fila de geração.
     }
 }
 
@@ -1139,7 +1265,7 @@ function downloadFichaPdf(blob, metadata) {
     setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
 }
 
-async function generateFichaPdf({ download = false } = {}) {
+async function generateFichaPdf({ download = false, previewVersion = null } = {}) {
     const exportButton = document.getElementById('btn-exportar-pdf');
     const refreshButton = document.getElementById('btn-atualizar-pdf');
     const status = document.getElementById('pdf-preview-status');
@@ -1150,22 +1276,31 @@ async function generateFichaPdf({ download = false } = {}) {
         return;
     }
 
-    exportButton.disabled = true;
-    refreshButton.disabled = true;
+    // Na atualização da visualização não bloqueamos os controles da tela.
+    // Somente a exportação desabilita temporariamente o próprio botão.
+    if (download) exportButton.disabled = true;
     status.textContent = download
         ? 'Gerando e preparando o arquivo PDF...'
         : 'Atualizando a visualização do PDF...';
 
     try {
         const metadata = getFichaMetadata();
-        const blob = await createFichaPdfBlob();
-        updateFichaPdfViewer(blob);
+        const blob = await createFichaPdfBlob({ preview: !download });
+
+        // Se houve uma alteração enquanto esta prévia estava sendo montada,
+        // não substitui o viewer por um PDF já desatualizado.
+        const previewIsCurrent = download || previewVersion === null || previewVersion === pdfPreviewVersion;
+        if (previewIsCurrent) {
+            updateFichaPdfViewer(blob);
+        }
 
         if (download) {
             downloadFichaPdf(blob, metadata);
             status.textContent = 'PDF atualizado e arquivo exportado com sucesso.';
-        } else {
+        } else if (previewIsCurrent) {
             status.textContent = 'Visualização do PDF atualizada.';
+        } else {
+            status.textContent = 'Há alterações mais recentes aguardando visualização.';
         }
     } catch (error) {
         console.error('Erro ao gerar PDF:', error);
@@ -1179,25 +1314,76 @@ async function generateFichaPdf({ download = false } = {}) {
     }
 }
 
-function queueFichaPdfGeneration(options) {
+function queueFichaPdfGeneration(options = {}) {
+    const isPreview = !options.download;
+
+    if (isPreview && pdfGenerationRunning) {
+        // Não cria uma fila de PDFs obsoletos. Apenas registra que existe
+        // uma nova atualização a ser feita quando a atual terminar.
+        pdfPreviewPending = true;
+        return pdfGenerationQueue;
+    }
+
+    pdfGenerationRunning = true;
+    pdfPreviewPending = false;
+
     pdfGenerationQueue = pdfGenerationQueue
         .catch(() => undefined)
-        .then(() => generateFichaPdf(options));
+        .then(() => generateFichaPdf(options))
+        .finally(() => {
+            pdfGenerationRunning = false;
+
+            if (pdfPreviewPending && state.schedule?.length > 0) {
+                pdfPreviewPending = false;
+                scheduleFichaPdfPreview({ immediate: false });
+            }
+        });
 
     return pdfGenerationQueue;
 }
 
-function scheduleFichaPdfPreview() {
-    clearTimeout(pdfPreviewTimer);
+function runPdfPreviewWhenIdle(version) {
+    const run = () => {
+        pdfIdleHandle = null;
+
+        if (version !== pdfPreviewVersion || !state.schedule?.length) {
+            return;
+        }
+
+        queueFichaPdfGeneration({ download: false, previewVersion: version });
+    };
+
+    if (typeof requestIdleCallback === 'function') {
+        pdfIdleHandle = requestIdleCallback(run, { timeout: 1200 });
+    } else {
+        // Fallback: agenda para uma nova tarefa do event loop.
+        setTimeout(run, 0);
+    }
+}
+
+function scheduleFichaPdfPreview({ immediate = false } = {}) {
+    cancelScheduledPdfPreview();
 
     if (!state.schedule || state.schedule.length === 0) {
         return;
     }
 
+    const version = ++pdfPreviewVersion;
     const status = document.getElementById('pdf-preview-status');
-    status.textContent = 'Aguardando atualização da visualização...';
+    status.textContent = immediate
+        ? 'Preparando visualização do PDF...'
+        : 'Visualização será atualizada após as alterações...';
 
+    // Evita gerar um PDF a cada tecla/campo alterado. O usuário continua
+    // trabalhando normalmente e a prévia é processada quando a interface fica ociosa.
     pdfPreviewTimer = setTimeout(() => {
-        queueFichaPdfGeneration({ download: false });
-    }, 500);
+        pdfPreviewTimer = null;
+        runPdfPreviewWhenIdle(version);
+    }, immediate ? 0 : 1200);
 }
+
+// Compatibilidade com chamadas existentes dos campos de identificação.
+function schedulePdfPreviewRefresh() {
+    scheduleFichaPdfPreview();
+}
+
