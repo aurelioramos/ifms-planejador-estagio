@@ -1182,7 +1182,14 @@ function createFichaPdfPage(isFirstPage, pageNumber) {
     }
 
     const activitiesTable = removeIdsFromClone(sourceActivitiesTable.cloneNode(true));
-    activitiesTable.className = 'ficha-page-activities-table';
+    // Preserva o modo de quatro colunas na cópia usada para paginação/PDF.
+    // Sem esta classe, as três primeiras colunas mantêm 100% da largura e a
+    // coluna de assinatura acaba sendo renderizada para fora da página A4.
+    activitiesTable.className = `ficha-page-activities-table${
+        sourceActivitiesTable.classList.contains('has-supervisor-signature-column')
+            ? ' has-supervisor-signature-column'
+            : ''
+    }`;
     const tbody = activitiesTable.querySelector('tbody');
     tbody.innerHTML = '';
     content.appendChild(activitiesTable);
