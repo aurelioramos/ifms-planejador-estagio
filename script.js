@@ -97,7 +97,7 @@ function setupEventListeners() {
     });
 
     document.getElementById('addBlackoutBtn').addEventListener('click', addBlackoutDate);
-    document.getElementById('generateScheduleBtn').addEventListener('click', generateSchedule);
+    document.getElementById('generateScheduleBtn').addEventListener('click', handleHeaderPlanningAction);
     document.getElementById('saveStateBtn').addEventListener('click', saveStateToLocalStorage);
     document.getElementById('generateScheduleBtnAction').addEventListener('click', generateSchedule);
     document.getElementById('saveStateBtnAction').addEventListener('click', saveStateToLocalStorage);
@@ -219,8 +219,116 @@ function renderBlackoutList() {
 }
 
 // --- ALGORITMO PRINCIPAL: GERAÇÃO DO CRONOGRAMA ---
+function updateHeaderPlanningAction() {
+    const button = document.getElementById('generateScheduleBtn');
+    if (!button) return;
+
+    const hasPlanning = Array.isArray(state.schedule) && state.schedule.length > 0;
+    button.textContent = hasPlanning ? 'Atualizar visualização' : 'Gerar Planejamento';
+    button.title = hasPlanning
+        ? 'Atualizar a tabela e a pré-visualização da ficha sem recalcular o planejamento'
+        : 'Gerar o planejamento a partir dos dados informados';
+}
+
+function handleHeaderPlanningAction() {
+    if (!state.schedule?.length) {
+        generateSchedule();
+        return;
+    }
+
+    hideAlert();
+    updateUI();
+    scheduleFichaPdfPreview({ immediate: true });
+}
+
+function appendPreservedDescription(target, description) {
+    const text = String(description || '').trim();
+    if (!text) return;
+
+    const current = String(target.description || '').trim();
+    if (!current) {
+        target.description = text;
+        return;
+    }
+
+    const existingBlocks = current.split(/\n\s*\n/).map(value => value.trim());
+    if (!existingBlocks.includes(text)) {
+        target.description = `${current}\n\n${text}`;
+    }
+}
+
+function remapScheduleDescriptions(previousSchedule, newSchedule) {
+    if (!Array.isArray(previousSchedule) || !previousSchedule.length || !newSchedule.length) {
+        return newSchedule;
+    }
+
+    const descriptions = previousSchedule
+        .map((item, originalIndex) => ({
+            date: item.date,
+            modality: item.modality,
+            description: String(item.description || '').trim(),
+            originalIndex
+        }))
+        .filter(item => item.description);
+
+    if (!descriptions.length) return newSchedule;
+
+    // Quantas descrições já foram remanejadas para cada nova atividade. Ao
+    // existir mais de uma opção equivalente, prioriza uma linha ainda vazia.
+    const usage = new Array(newSchedule.length).fill(0);
+    const toTime = date => new Date(`${date}T00:00:00`).getTime();
+
+    descriptions.forEach(oldItem => {
+        const oldTime = toTime(oldItem.date);
+        const rankedCandidates = newSchedule.map((newItem, newIndex) => {
+            let tier = 3;
+            if (newItem.date === oldItem.date && newItem.modality === oldItem.modality) tier = 0;
+            else if (newItem.date === oldItem.date) tier = 1;
+            else if (newItem.modality === oldItem.modality) tier = 2;
+
+            return {
+                newIndex,
+                tier,
+                usage: usage[newIndex],
+                distance: Math.abs(toTime(newItem.date) - oldTime)
+            };
+        });
+
+        rankedCandidates.sort((a, b) =>
+            a.tier - b.tier ||
+            a.usage - b.usage ||
+            a.distance - b.distance ||
+            a.newIndex - b.newIndex
+        );
+
+        const best = rankedCandidates[0];
+        if (best) {
+            appendPreservedDescription(newSchedule[best.newIndex], oldItem.description);
+            usage[best.newIndex] += 1;
+        }
+    });
+
+    return newSchedule;
+}
+
+function confirmPlanningRegeneration() {
+    if (!state.schedule?.length) return true;
+
+    return window.confirm(
+        'Ao gerar novamente o planejamento, dias, horários, modalidades e outros dados do cronograma podem ser alterados e dados salvos podem ser perdidos.\n\n' +
+        'As descrições sumárias já preenchidas serão preservadas e remanejadas para as atividades correspondentes sempre que possível.\n\n' +
+        'Deseja gerar um novo planejamento?'
+    );
+}
+
 function generateSchedule() {
     hideAlert();
+
+    if (!confirmPlanningRegeneration()) {
+        return;
+    }
+
+    const previousSchedule = (state.schedule || []).map(item => ({ ...item }));
 
     const obsVal = parseFloat(document.getElementById('obsHours').value) || 0;
     const partVal = parseFloat(document.getElementById('partHours').value) || 0;
@@ -332,8 +440,9 @@ function generateSchedule() {
         currentDate.setDate(currentDate.getDate() + 1);
     }
 
-    state.schedule = schedule;
+    state.schedule = remapScheduleDescriptions(previousSchedule, schedule);
     updateUI(totalRequired);
+    updateHeaderPlanningAction();
 }
 
 function addManualActivity() {
@@ -399,6 +508,7 @@ function updateUI(totalRequired) {
     }
 
     const schedule = state.schedule;
+    updateHeaderPlanningAction();
     const plannedHours = schedule.reduce((sum, item) => sum + item.hours, 0);
     const remaining = totalRequired - plannedHours;
     const percent = totalRequired > 0 ? Math.min(100, Math.round((plannedHours / totalRequired) * 100)) : 0;
@@ -639,9 +749,24 @@ function renderScheduleTable() {
 
 function renderAtividadesTable(atividades) {
 
-    // 3. Preenche a tabela dinamicamente
-    const tbody = document.querySelector('#pdf-tabela-atividades tbody');
-    tbody.innerHTML = ''; // Limpa antes de popular
+    // A coluna de assinatura só é necessária quando nenhuma atividade possui
+    // descrição sumária preenchida. Quando existe ao menos uma descrição, a
+    // área de texto ganha toda a largura disponível.
+    const hasAnySummary = atividades.some(ativ => String(ativ.description || '').trim() !== '');
+    const showSupervisorSignatureColumn = atividades.length > 0 && !hasAnySummary;
+
+    const table = document.getElementById('pdf-tabela-atividades');
+    const headerRow = table.querySelector('thead tr');
+    const tbody = table.querySelector('tbody');
+
+    table.classList.toggle('has-supervisor-signature-column', showSupervisorSignatureColumn);
+    headerRow.innerHTML = `
+        <th>Data</th>
+        <th>Nº de horas</th>
+        <th>Descrição Sumária das Atividades</th>
+        ${showSupervisorSignatureColumn ? '<th class="pdf-supervisor-signature-header">Assinatura do Supervisor</th>' : ''}
+    `;
+    tbody.innerHTML = '';
 
     // Insere as atividades do planejamento
     atividades.forEach(ativ => {
@@ -657,8 +782,10 @@ function renderAtividadesTable(atividades) {
             <tr>
                 <td>${formatDate(ativ.date)}</td>
                 <td>${ativ.hours}</td>
-                <td style="text-align: start; vertical-align: baseline; white-space: pre-wrap; overflow-wrap: anywhere;">${escapeHtml(ativ.description || '')}</td>
-                <td></td>
+                <td class="pdf-activity-summary">
+                    <span class="pdf-modality-label ${modalidadeClass}">${escapeHtml(modalidade)}</span><span class="pdf-activity-description">${escapeHtml(ativ.description || '')}</span>
+                </td>
+                ${showSupervisorSignatureColumn ? '<td class="pdf-supervisor-signature-cell"></td>' : ''}
             </tr>
         `;
     });
@@ -670,7 +797,7 @@ function renderAtividadesTable(atividades) {
                 <td></td>
                 <td></td>
                 <td></td>
-                <td></td>
+                ${showSupervisorSignatureColumn ? '<td></td>' : ''}
             </tr>
         `;
     }
@@ -817,6 +944,7 @@ function removeStoredPlanningData() {
 
     const scheduleSection = document.getElementById('scheduleSection');
     if (scheduleSection) scheduleSection.classList.add('hidden');
+    updateHeaderPlanningAction();
 
     // Limpa a pré-visualização do PDF e libera a URL temporária.
     const viewer = document.getElementById('ficha-pdf-viewer');
@@ -872,6 +1000,8 @@ function loadStateFromLocalStorage() {
             console.error('Erro ao carregar dados salvos', e);
         }
     }
+
+    updateHeaderPlanningAction();
 }
 
 // --- FUNÇÕES AUXILIARES DE CÁLCULO DE PERÍODOS E LIMITES ---
